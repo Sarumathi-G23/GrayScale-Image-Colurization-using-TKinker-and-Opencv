@@ -7,9 +7,6 @@ import requests
 st.set_page_config(page_title="Image Colorization", layout="centered")
 st.title("🖤 Grayscale Image Colorization using Deep Learning")
 
-# -----------------------------
-# Create model directory
-# -----------------------------
 MODEL_DIR = "model"
 if not os.path.exists(MODEL_DIR):
     os.makedirs(MODEL_DIR)
@@ -18,9 +15,13 @@ PROTOTXT_PATH = os.path.join(MODEL_DIR, "colorization_deploy_v2.prototxt")
 POINTS_PATH = os.path.join(MODEL_DIR, "pts_in_hull.npy")
 MODEL_PATH = os.path.join(MODEL_DIR, "colorization_release_v2.caffemodel")
 
-# -----------------------------
-# Download helper
-# -----------------------------
+PROTOTXT_URL = "https://raw.githubusercontent.com/richzhang/colorization/master/models/colorization_deploy_v2.prototxt"
+POINTS_URL = "https://raw.githubusercontent.com/richzhang/colorization/master/resources/pts_in_hull.npy"
+MODEL_URL = "http://eecs.berkeley.edu/~rich.zhang/projects/2016_colorization/files/demo_v2/colorization_release_v2.caffemodel"
+
+EXPECTED_MODEL_SIZE_MB = 120  # approximate safety check
+
+
 def download_file(url, save_path):
     response = requests.get(url, stream=True)
     with open(save_path, "wb") as f:
@@ -28,32 +29,33 @@ def download_file(url, save_path):
             if chunk:
                 f.write(chunk)
 
-# -----------------------------
-# Official working URLs
-# -----------------------------
-PROTOTXT_URL = "https://raw.githubusercontent.com/richzhang/colorization/master/models/colorization_deploy_v2.prototxt"
-POINTS_URL = "https://raw.githubusercontent.com/richzhang/colorization/master/resources/pts_in_hull.npy"
-MODEL_URL = "http://eecs.berkeley.edu/~rich.zhang/projects/2016_colorization/files/demo_v2/colorization_release_v2.caffemodel"
 
-# -----------------------------
-# Download missing files
-# -----------------------------
-if not os.path.exists(PROTOTXT_PATH):
-    st.info("Downloading prototxt...")
-    download_file(PROTOTXT_URL, PROTOTXT_PATH)
+def ensure_model_files():
+    # Download prototxt
+    if not os.path.exists(PROTOTXT_PATH):
+        st.info("Downloading prototxt...")
+        download_file(PROTOTXT_URL, PROTOTXT_PATH)
 
-if not os.path.exists(POINTS_PATH):
-    st.info("Downloading pts file...")
-    download_file(POINTS_URL, POINTS_PATH)
+    # Download pts
+    if not os.path.exists(POINTS_PATH):
+        st.info("Downloading pts file...")
+        download_file(POINTS_URL, POINTS_PATH)
 
-if not os.path.exists(MODEL_PATH):
-    st.info("Downloading model (first time only, 1-2 minutes)...")
-    download_file(MODEL_URL, MODEL_PATH)
-    st.success("Model downloaded successfully!")
+    # Download model safely
+    if os.path.exists(MODEL_PATH):
+        size_mb = os.path.getsize(MODEL_PATH) / (1024 * 1024)
+        if size_mb < EXPECTED_MODEL_SIZE_MB:
+            os.remove(MODEL_PATH)
 
-# -----------------------------
-# Cache model loading
-# -----------------------------
+    if not os.path.exists(MODEL_PATH):
+        st.info("Downloading model (first time only, ~2 minutes)...")
+        download_file(MODEL_URL, MODEL_PATH)
+        st.success("Model downloaded successfully!")
+
+
+ensure_model_files()
+
+
 @st.cache_resource
 def load_model():
     net = cv2.dnn.readNetFromCaffe(PROTOTXT_PATH, MODEL_PATH)
@@ -68,15 +70,13 @@ def load_model():
 
     return net
 
+
 net = load_model()
 
-# -----------------------------
-# Upload Image
-# -----------------------------
+
 uploaded_file = st.file_uploader("Upload a grayscale image", type=["jpg", "png", "jpeg"])
 
 if uploaded_file is not None:
-
     file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
     image = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
 
@@ -85,7 +85,6 @@ if uploaded_file is not None:
 
     st.info("Colorizing image...")
 
-    # Preprocess
     scaled = image.astype("float32") / 255.0
     lab = cv2.cvtColor(scaled, cv2.COLOR_BGR2LAB)
 
@@ -93,7 +92,6 @@ if uploaded_file is not None:
     L = cv2.split(resized)[0]
     L -= 50
 
-    # Forward pass
     net.setInput(cv2.dnn.blobFromImage(L))
     ab = net.forward()[0, :, :, :].transpose((1, 2, 0))
 
