@@ -5,7 +5,6 @@ import os
 import requests
 
 st.set_page_config(page_title="Image Colorization", layout="centered")
-
 st.title("🖤 Grayscale Image Colorization using Deep Learning")
 
 # -----------------------------
@@ -14,45 +13,41 @@ st.title("🖤 Grayscale Image Colorization using Deep Learning")
 if not os.path.exists("model"):
     os.makedirs("model")
 
-# -----------------------------
-# File paths
-# -----------------------------
 PROTOTXT_PATH = os.path.join("model", "colorization_deploy_v2.prototxt")
 POINTS_PATH = os.path.join("model", "pts_in_hull.npy")
 MODEL_PATH = os.path.join("model", "colorization_release_v2.caffemodel")
 
 # -----------------------------
-# Safe download function
+# Download helper (no status raise)
 # -----------------------------
 def download_file(url, save_path):
-    r = requests.get(url, allow_redirects=True)
-    r.raise_for_status()
+    response = requests.get(url, stream=True)
     with open(save_path, "wb") as f:
-        f.write(r.content)
+        for chunk in response.iter_content(chunk_size=8192):
+            if chunk:
+                f.write(chunk)
 
 # -----------------------------
-# Download required files
+# Reliable download links
+# -----------------------------
+PROTOTXT_URL = "https://raw.githubusercontent.com/opencv/opencv/master/samples/dnn/colorization_deploy_v2.prototxt"
+POINTS_URL = "https://raw.githubusercontent.com/opencv/opencv/master/samples/dnn/pts_in_hull.npy"
+MODEL_URL = "https://github.com/opencv/opencv_3rdparty/raw/dnn_samples_face_detector_20170830/colorization_release_v2.caffemodel"
+
+# -----------------------------
+# Download if missing
 # -----------------------------
 if not os.path.exists(PROTOTXT_PATH):
-    st.info("Downloading prototxt file...")
-    download_file(
-        "https://github.com/richzhang/colorization/raw/master/models/colorization_deploy_v2.prototxt",
-        PROTOTXT_PATH
-    )
+    st.info("Downloading prototxt...")
+    download_file(PROTOTXT_URL, PROTOTXT_PATH)
 
 if not os.path.exists(POINTS_PATH):
-    st.info("Downloading pts_in_hull.npy...")
-    download_file(
-        "https://github.com/richzhang/colorization/raw/master/resources/pts_in_hull.npy",
-        POINTS_PATH
-    )
+    st.info("Downloading pts file...")
+    download_file(POINTS_URL, POINTS_PATH)
 
 if not os.path.exists(MODEL_PATH):
-    st.info("Downloading model file (this may take 1-2 minutes)...")
-    download_file(
-        "http://eecs.berkeley.edu/~rich.zhang/projects/2016_colorization/files/demo_v2/colorization_release_v2.caffemodel",
-        MODEL_PATH
-    )
+    st.info("Downloading model (1–2 minutes)...")
+    download_file(MODEL_URL, MODEL_PATH)
     st.success("Model downloaded successfully!")
 
 # -----------------------------
@@ -70,9 +65,7 @@ if uploaded_file is not None:
 
     st.info("Colorizing image...")
 
-    # -----------------------------
-    # Load Model
-    # -----------------------------
+    # Load model
     net = cv2.dnn.readNetFromCaffe(PROTOTXT_PATH, MODEL_PATH)
     pts = np.load(POINTS_PATH)
 
@@ -83,9 +76,7 @@ if uploaded_file is not None:
     net.getLayer(class8).blobs = [pts.astype("float32")]
     net.getLayer(conv8).blobs = [np.full([1, 313], 2.606, dtype="float32")]
 
-    # -----------------------------
     # Preprocess
-    # -----------------------------
     scaled = image.astype("float32") / 255.0
     lab = cv2.cvtColor(scaled, cv2.COLOR_BGR2LAB)
 
@@ -93,9 +84,7 @@ if uploaded_file is not None:
     L = cv2.split(resized)[0]
     L -= 50
 
-    # -----------------------------
-    # Colorization
-    # -----------------------------
+    # Colorize
     net.setInput(cv2.dnn.blobFromImage(L))
     ab = net.forward()[0, :, :, :].transpose((1, 2, 0))
 
